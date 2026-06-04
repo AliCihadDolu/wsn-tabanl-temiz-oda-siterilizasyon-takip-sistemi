@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hastane WSN Simülatörü</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#f1f5f9;font-family:'Rajdhani',sans-serif;color:#1e293b}
+#wsn{width:100%;max-width:900px;margin:0 auto;background:#fff;border-radius:10px;box-shadow:0 2px 16px rgba(0,0,0,0.10);overflow:hidden}
+#hdr{display:flex;align-items:center;justify-content:space-between;padding:10px 16px 9px;border-bottom:1px solid #e2e8f0;background:#f8fafc}
+#hdr .title{font-size:15px;font-weight:700;letter-spacing:1.2px;color:#1e293b}
+#hdr .sub{font-size:10px;color:#64748b;letter-spacing:.4px}
+#hdr .live{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:1px;color:#22c55e}
+.pulse{width:7px;height:7px;border-radius:50%;background:#22c55e;animation:blink 1.2s ease-in-out infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.15}}
+#canvas-wrap{width:100%;padding:12px 12px 6px}
+#hmap{display:block;width:100%;border-radius:6px;border:1px solid #e2e8f0}
+#bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:8px 12px;border-top:1px solid #e2e8f0}
+@media(max-width:600px){#bottom{grid-template-columns:repeat(2,1fr)}}
+.scard{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:7px 9px;transition:border-color .3s,background .3s}
+.scard.alarm{border-color:#ef4444!important;background:#fff5f5}
+.sc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.sc-room{font-size:9px;font-weight:700;letter-spacing:.7px;color:#64748b}
+.sc-type{font-size:8px;color:#94a3b8}
+.sc-val{font-family:'Share Tech Mono',monospace;font-size:16px;line-height:1;color:#1e293b;transition:color .3s}
+.sc-val span{font-size:9px;color:#64748b}
+.scard.alarm .sc-val{color:#dc2626}
+.sc-status{font-size:8px;font-weight:600;margin-top:2px;color:#16a34a}
+.scard.alarm .sc-status{color:#dc2626}
+.scbar{height:2px;border-radius:1px;margin-top:4px;background:#e2e8f0;overflow:hidden}
+.scbar-f{height:100%;border-radius:1px;transition:width .7s ease,background .4s}
+#stats{display:flex;gap:6px;padding:6px 12px 8px;border-top:1px solid #e2e8f0}
+.stat{flex:1;background:#f8fafc;border-radius:6px;padding:5px 8px;text-align:center;border:1px solid #e2e8f0}
+.stat .sv{font-size:18px;font-weight:700;color:#1e293b}
+.stat .sl{font-size:8px;letter-spacing:.5px;color:#64748b}
+.ok-c{color:#16a34a}.alarm-c{color:#dc2626}
+#logwrap{padding:6px 12px 10px;border-top:1px solid #e2e8f0}
+#logtitle{font-size:9px;font-weight:700;letter-spacing:.8px;color:#64748b;margin-bottom:3px}
+#loglist{list-style:none;display:flex;flex-direction:column;gap:2px}
+#loglist li{font-family:'Share Tech Mono',monospace;font-size:8.5px;color:#64748b;padding:1.5px 0;border-bottom:1px solid #f1f5f9}
+#loglist li.la{color:#dc2626;font-weight:700}
+#loglist li.lok{color:#16a34a}
+</style>
+</head>
+<body>
+<div id="wsn">
+<div id="hdr">
+  <div><div class="title">HASTANE TEMİZ ODA — WSN SİMÜLATÖRÜ</div><div class="sub">Kablosuz Sensör Ağı · 4 Sensör/Oda · Yataklar &amp; Ekipman</div></div>
+  <div class="live"><div class="pulse"></div>CANLI</div>
+</div>
+<div id="canvas-wrap"><canvas id="hmap"></canvas></div>
+<div id="bottom" role="list"></div>
+<div id="stats">
+  <div class="stat"><div class="sv" id="st-t">0</div><div class="sl">TOPLAM NODE</div></div>
+  <div class="stat"><div class="sv ok-c" id="st-ok">0</div><div class="sl">NORMAL</div></div>
+  <div class="stat"><div class="sv alarm-c" id="st-al">0</div><div class="sl">ALARM</div></div>
+  <div class="stat"><div class="sv" style="color:#3b82f6">1</div><div class="sl">GATEWAY</div></div>
+</div>
+<div id="logwrap">
+  <div id="logtitle">SİSTEM LOGU</div>
+  <ul id="loglist"></ul>
+</div>
+</div>
+<script>
+const VW=680,VH=480;
+const ROOMS=[
+  {id:"ODA1",label:"Hasta Odası 1",x:10,y:10,w:150,h:120,fill:"#fefce8",stroke:"#ca8a04"},
+  {id:"ODA2",label:"Hasta Odası 2",x:170,y:10,w:150,h:120,fill:"#fefce8",stroke:"#ca8a04"},
+  {id:"ODA3",label:"Hasta Odası 3",x:330,y:10,w:150,h:120,fill:"#fefce8",stroke:"#ca8a04"},
+  {id:"ODA4",label:"Yoğun Bakım",x:490,y:10,w:182,h:120,fill:"#fce7f3",stroke:"#9d174d"},
+  {id:"ODA5",label:"Ameliyathane",x:10,y:210,w:200,h:130,fill:"#e0f2fe",stroke:"#0369a1"},
+  {id:"ODA6",label:"Steril Hazırlık",x:220,y:210,w:150,h:130,fill:"#ecfdf5",stroke:"#065f46"},
+  {id:"ODA7",label:"Laboratuvar",x:380,y:210,w:180,h:130,fill:"#f5f3ff",stroke:"#4c1d95"},
+  {id:"KORR",label:"KORIDOR",x:10,y:140,w:662,h:60,fill:"#f1f5f9",stroke:"#94a3b8"},
+  {id:"GW",label:"GATEWAY",x:565,y:350,w:105,h:55,fill:"#0f172a",stroke:"#1e40af",isGW:true},
+];
+const FURNITURE={
+  ODA1:[
+    {type:"bed",x:20,y:25,w:55,h:30,label:"Yatak-1"},
+    {type:"bed",x:90,y:25,w:55,h:30,label:"Yatak-2"},
+    {type:"monitor",x:22,y:65,w:22,h:18},
+    {type:"iv",x:52,y:60,w:10,h:28},
+    {type:"cabinet",x:120,y:68,w:30,h:20},
+  ],
+  ODA2:[
+    {type:"bed",x:180,y:25,w:55,h:30,label:"Yatak-1"},
+    {type:"bed",x:248,y:25,w:55,h:30,label:"Yatak-2"},
+    {type:"monitor",x:182,y:65,w:22,h:18},
+    {type:"iv",x:214,y:60,w:10,h:28},
+    {type:"cabinet",x:278,y:68,w:30,h:20},
+  ],
+  ODA3:[
+    {type:"bed",x:340,y:25,w:55,h:30,label:"Yatak-1"},
+    {type:"bed",x:408,y:25,w:55,h:30,label:"Yatak-2"},
+    {type:"monitor",x:342,y:65,w:22,h:18},
+    {type:"iv",x:375,y:60,w:10,h:28},
+    {type:"cabinet",x:438,y:68,w:30,h:20},
+  ],
+  ODA4:[
+    {type:"bed",x:500,y:20,w:60,h:32,label:"YB-1"},
+    {type:"bed",x:568,y:20,w:60,h:32,label:"YB-2"},
+    {type:"ecg",x:502,y:62,w:28,h:18},
+    {type:"ventilator",x:538,y:60,w:22,h:22},
+    {type:"monitor",x:570,y:62,w:22,h:18},
+    {type:"defibrillator",x:600,y:62,w:22,h:20},
+  ],
+  ODA5:[
+    {type:"bed",x:20,y:225,w:70,h:35,label:"Ameliyat Masası"},
+    {type:"lamp",x:55,y:218,w:30,h:12},
+    {type:"monitor",x:100,y:225,w:24,h:20},
+    {type:"ecg",x:130,y:225,w:26,h:20},
+    {type:"ventilator",x:165,y:225,w:22,h:24},
+    {type:"cabinet",x:100,y:255,w:35,h:22},
+    {type:"defibrillator",x:148,y:258,w:24,h:18},
+  ],
+  ODA6:[
+    {type:"cabinet",x:230,y:222,w:35,h:25},
+    {type:"cabinet",x:272,y:222,w:35,h:25},
+    {type:"table",x:230,y:258,w:80,h:30},
+    {type:"iv",x:340,y:218,w:12,h:35},
+  ],
+  ODA7:[
+    {type:"table",x:390,y:222,w:60,h:28},
+    {type:"table",x:460,y:222,w:60,h:28},
+    {type:"cabinet",x:390,y:262,w:40,h:25},
+    {type:"monitor",x:440,y:262,w:24,h:20},
+    {type:"cabinet",x:474,y:262,w:40,h:25},
+  ],
+};
+const SENSOR_DEFS={
+  ODA1:[
+    {sid:"O1T",type:"T",label:"Sıcaklık",x:15,y:15,min:20,max:24,unit:"°C",nmin:21,nmax:23.5,amin:25,amax:29},
+    {sid:"O1H",type:"H",label:"Nem",x:140,y:15,min:30,max:60,unit:"%",nmin:35,nmax:52,amin:62,amax:75},
+    {sid:"O1P",type:"P",label:"Basınç",x:15,y:115,min:15,max:30,unit:"Pa",nmin:18,nmax:26,amin:0,amax:12},
+    {sid:"O1K",type:"K",label:"Partikül",x:140,y:115,min:0,max:10,unit:"µg",nmin:2,nmax:5.5,amin:12,amax:45},
+  ],
+  ODA2:[
+    {sid:"O2T",type:"T",label:"Sıcaklık",x:175,y:15,min:20,max:24,unit:"°C",nmin:21,nmax:23.5,amin:25,amax:29},
+    {sid:"O2H",type:"H",label:"Nem",x:300,y:15,min:30,max:60,unit:"%",nmin:35,nmax:52,amin:62,amax:75},
+    {sid:"O2P",type:"P",label:"Basınç",x:175,y:115,min:15,max:30,unit:"Pa",nmin:18,nmax:26,amin:0,amax:12},
+    {sid:"O2K",type:"K",label:"Partikül",x:300,y:115,min:0,max:10,unit:"µg",nmin:2,nmax:5.5,amin:12,amax:45},
+  ],
+  ODA3:[
+    {sid:"O3T",type:"T",label:"Sıcaklık",x:335,y:15,min:20,max:24,unit:"°C",nmin:21,nmax:23.5,amin:25,amax:29},
+    {sid:"O3H",type:"H",label:"Nem",x:460,y:15,min:30,max:60,unit:"%",nmin:35,nmax:52,amin:62,amax:75},
+    {sid:"O3P",type:"P",label:"Basınç",x:335,y:115,min:15,max:30,unit:"Pa",nmin:18,nmax:26,amin:0,amax:12},
+    {sid:"O3K",type:"K",label:"Partikül",x:460,y:115,min:0,max:10,unit:"µg",nmin:2,nmax:5.5,amin:12,amax:45},
+  ],
+  ODA4:[
+    {sid:"O4T",type:"T",label:"Sıcaklık",x:495,y:15,min:20,max:24,unit:"°C",nmin:21,nmax:23.5,amin:25,amax:29},
+    {sid:"O4H",type:"H",label:"Nem",x:660,y:15,min:30,max:60,unit:"%",nmin:35,nmax:52,amin:62,amax:75},
+    {sid:"O4P",type:"P",label:"Basınç",x:495,y:115,min:15,max:30,unit:"Pa",nmin:18,nmax:26,amin:0,amax:12},
+    {sid:"O4K",type:"K",label:"Partikül",x:660,y:115,min:0,max:10,unit:"µg",nmin:2,nmax:5.5,amin:12,amax:45},
+  ],
+  ODA5:[
+    {sid:"O5T",type:"T",label:"Sıcaklık",x:15,y:215,min:20,max:24,unit:"°C",nmin:21,nmax:23.5,amin:25,amax:29},
+    {sid:"O5H",type:"H",label:"Nem",x:195,y:215,min:30,max:60,unit:"%",nmin:35,nmax:52,amin:62,amax:75},
+    {sid:"O5P",type:"P",label:"Basınç",x:15,y:325,min:15,max:30,unit:"Pa",nmin:18,nmax:26,amin:0,amax:12},
+    {sid:"O5K",type:"K",label:"Partikül",x:195,y:325,min:0,max:10,unit:"µg",nmin:2,nmax:5.5,amin:12,amax:45},
+  ],
+  ODA6:[
+    {sid:"O6T",type:"T",label:"Sıcaklık",x:225,y:215,min:20,max:24,unit:"°C",nmin:21,nmax:23.5,amin:25,amax:29},
+    {sid:"O6H",type:"H",label:"Nem",x:355,y:215,min:30,max:60,unit:"%",nmin:35,nmax:52,amin:62,amax:75},
+    {sid:"O6P",type:"P",label:"Basınç",x:225,y:325,min:15,max:30,unit:"Pa",nmin:18,nmax:26,amin:0,amax:12},
+    {sid:"O6K",type:"K",label:"Partikül",x:355,y:325,min:0,max:10,unit:"µg",nmin:2,nmax:5.5,amin:12,amax:45},
+  ],
+  ODA7:[
+    {sid:"O7T",type:"T",label:"Sıcaklık",x:385,y:215,min:20,max:24,unit:"°C",nmin:21,nmax:23.5,amin:25,amax:29},
+    {sid:"O7H",type:"H",label:"Nem",x:545,y:215,min:30,max:60,unit:"%",nmin:35,nmax:52,amin:62,amax:75},
+    {sid:"O7P",type:"P",label:"Basınç",x:385,y:325,min:15,max:30,unit:"Pa",nmin:18,nmax:26,amin:0,amax:12},
+    {sid:"O7K",type:"K",label:"Partikül",x:545,y:325,min:0,max:10,unit:"µg",nmin:2,nmax:5.5,amin:12,amax:45},
+  ],
+};
+const ALL_SENSORS=Object.values(SENSOR_DEFS).flat();
+const GW_X=617,GW_Y=377;
+let sensorState={},signals=[],canvas,ctx,W,H,raf;
+function sx(x){return x*W/VW}
+function sy(y){return y*H/VH}
+function initCanvas(){
+  canvas=document.getElementById("hmap");
+  W=Math.min(canvas.parentElement.clientWidth-24,860);
+  H=Math.round(W*(VH/VW));
+  canvas.width=W;canvas.height=H;
+  canvas.style.width=W+"px";canvas.style.height=H+"px";
+  ctx=canvas.getContext("2d");
+}
+function rr(x,y,w,h,r=4){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);ctx.closePath();
+}
+const FCOLOR={
+  bed:"#bfdbfe",bedStroke:"#3b82f6",
+  monitor:"#d1fae5",monitorStroke:"#059669",
+  iv:"#e9d5ff",ivStroke:"#7c3aed",
+  cabinet:"#fed7aa",cabinetStroke:"#ea580c",
+  table:"#fde68a",tableStroke:"#d97706",
+  lamp:"#fef9c3",lampStroke:"#ca8a04",
+  ecg:"#cffafe",ecgStroke:"#0891b2",
+  ventilator:"#fce7f3",ventilatorStroke:"#be185d",
+  defibrillator:"#ffe4e6",defibrillatorStroke:"#e11d48",
+};
+function drawFurniture(flist){
+  flist.forEach(f=>{
+    const x=sx(f.x),y=sy(f.y),w=sx(f.w),h=sy(f.h);
+    const fc=FCOLOR[f.type]||"#e5e7eb",sc=FCOLOR[f.type+"Stroke"]||"#6b7280";
+    ctx.fillStyle=fc;ctx.strokeStyle=sc;ctx.lineWidth=0.8;
+    if(f.type==="bed"){
+      rr(x,y,w,h,3);ctx.fill();ctx.stroke();
+      ctx.fillStyle="#fff";rr(x+2,y+2,w*0.35,h*0.55,2);ctx.fill();ctx.stroke();
+      ctx.fillStyle=fc;rr(x+w*0.38,y+2,w*0.6,h*0.9,2);ctx.fill();ctx.stroke();
+      ctx.strokeStyle=sc;ctx.lineWidth=0.4;
+      ctx.beginPath();ctx.moveTo(x+w*0.38,y+h*0.5);ctx.lineTo(x+w*0.98,y+h*0.5);ctx.stroke();
+      if(f.label){ctx.fillStyle="#1e40af";ctx.font=`bold ${Math.max(6,sx(6.5))}px Rajdhani,sans-serif`;ctx.textAlign="center";ctx.textBaseline="bottom";ctx.fillText(f.label,x+w/2,y+h+sy(7));}
+    } else if(f.type==="monitor"){
+      rr(x,y,w,h,2);ctx.fill();ctx.stroke();
+      ctx.fillStyle="#34d399";rr(x+2,y+2,w-4,h-7,1);ctx.fill();
+      ctx.strokeStyle="#065f46";ctx.lineWidth=0.7;ctx.beginPath();
+      const mx=x+2;ctx.moveTo(mx,y+h/2);ctx.lineTo(mx+w*0.2,y+h/2);ctx.lineTo(mx+w*0.3,y+h*0.2);ctx.lineTo(mx+w*0.4,y+h*0.8);ctx.lineTo(mx+w*0.5,y+h/2);ctx.lineTo(mx+w*0.65,y+h/2);ctx.stroke();
+      ctx.fillStyle=sc;ctx.fillRect(x+w*0.4,y+h-2,w*0.2,3);
+    } else if(f.type==="iv"){
+      ctx.fillStyle="#6b7280";ctx.fillRect(x+w/2-1,y+h*0.3,2,h*0.7);
+      ctx.fillStyle="#e9d5ff";ctx.strokeStyle="#7c3aed";ctx.lineWidth=0.7;
+      rr(x,y,w,h*0.28,3);ctx.fill();ctx.stroke();
+      ctx.fillStyle="#7c3aed";ctx.fillRect(x+w/2-1,y+h*0.28,2,h*0.08);
+    } else if(f.type==="cabinet"){
+      rr(x,y,w,h,2);ctx.fill();ctx.stroke();
+      ctx.strokeStyle=sc;ctx.lineWidth=0.5;ctx.beginPath();ctx.moveTo(x,y+h/2);ctx.lineTo(x+w,y+h/2);ctx.stroke();
+      ctx.fillStyle=sc;ctx.beginPath();ctx.arc(x+w/2,y+h*0.25,1.5,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(x+w/2,y+h*0.75,1.5,0,Math.PI*2);ctx.fill();
+    } else if(f.type==="table"){
+      rr(x,y,w,h,2);ctx.fill();ctx.stroke();
+      ctx.fillStyle="#fff";ctx.globalAlpha=0.4;rr(x+2,y+2,w-4,h-4,1);ctx.fill();ctx.globalAlpha=1;
+    } else if(f.type==="lamp"){
+      ctx.fillStyle="#fef9c3";ctx.strokeStyle="#ca8a04";ctx.lineWidth=1.2;
+      ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/2,h/2,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+      ctx.fillStyle="#fde047";ctx.beginPath();ctx.ellipse(x+w/2,y+h/2,w/3,h/3,0,0,Math.PI*2);ctx.fill();
+      ctx.strokeStyle="rgba(253,224,71,0.4)";ctx.lineWidth=0.6;
+      for(let a=0;a<6;a++){const ang=a*Math.PI/3;ctx.beginPath();ctx.moveTo(x+w/2+Math.cos(ang)*w/2,y+h/2+Math.sin(ang)*h/2);ctx.lineTo(x+w/2+Math.cos(ang)*(w/2+sx(8)),y+h/2+Math.sin(ang)*(h/2+sy(5)));ctx.stroke();}
+    } else if(f.type==="ecg"){
+      rr(x,y,w,h,2);ctx.fill();ctx.stroke();
+      ctx.fillStyle="#0e7490";rr(x+2,y+2,w-4,h-7,1);ctx.fill();
+      ctx.strokeStyle="#ecfeff";ctx.lineWidth=0.8;ctx.beginPath();
+      ctx.moveTo(x+2,y+h/2);ctx.lineTo(x+w*0.2,y+h/2);ctx.lineTo(x+w*0.3,y+h*0.15);ctx.lineTo(x+w*0.38,y+h*0.85);ctx.lineTo(x+w*0.46,y+h/2);ctx.lineTo(x+w*0.6,y+h/2);ctx.lineTo(x+w*0.65,y+h*0.3);ctx.lineTo(x+w*0.72,y+h/2);ctx.lineTo(x+w-2,y+h/2);ctx.stroke();
+      ctx.fillStyle="#ecfeff";ctx.font=`bold ${Math.max(5,sx(5))}px Share Tech Mono,monospace`;ctx.textAlign="center";ctx.textBaseline="bottom";ctx.fillText("ECG",x+w/2,y+h-1);
+    } else if(f.type==="ventilator"){
+      rr(x,y,w,h,3);ctx.fill();ctx.stroke();
+      ctx.fillStyle=sc;ctx.beginPath();ctx.arc(x+w/2,y+h/2,Math.min(w,h)*0.28,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(x+w/2,y+h/2,Math.min(w,h)*0.14,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=sc;ctx.font=`bold ${Math.max(4,sx(5))}px Rajdhani,sans-serif`;ctx.textAlign="center";ctx.textBaseline="top";ctx.fillText("VNT",x+w/2,y+h*0.78);
+    } else if(f.type==="defibrillator"){
+      rr(x,y,w,h,2);ctx.fill();ctx.stroke();
+      ctx.fillStyle=sc;ctx.font=`bold ${Math.max(5,sx(6.5))}px Rajdhani,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("⚡",x+w/2,y+h/2);
+    }
+  });
+}
+const STYPE_COLOR={"T":"#ef4444","H":"#3b82f6","P":"#8b5cf6","K":"#f59e0b"};
+function drawFloorplan(){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle="#f1f5f9";ctx.fillRect(0,0,W,H);
+  ROOMS.forEach(r=>{
+    const rx=sx(r.x),ry=sy(r.y),rw=sx(r.w),rh=sy(r.h);
+    if(r.isGW){
+      ctx.fillStyle="#0f172a";rr(rx,ry,rw,rh,6);ctx.fill();
+      ctx.strokeStyle="#3b82f6";ctx.lineWidth=1.5;ctx.stroke();
+      ctx.fillStyle="#93c5fd";ctx.font=`bold ${Math.max(8,sx(9.5))}px Rajdhani,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("GATEWAY",rx+rw/2,ry+rh/2-sy(6));
+      ctx.fillStyle="#60a5fa";ctx.font=`${Math.max(6,sx(7.5))}px Rajdhani,sans-serif`;ctx.fillText("Merkez Koordinatör",rx+rw/2,ry+rh/2+sy(7));
+      return;
+    }
+    ctx.fillStyle=r.fill;rr(rx,ry,rw,rh,5);ctx.fill();
+    ctx.strokeStyle=r.stroke;ctx.lineWidth=1;ctx.stroke();
+    if(r.id!=="KORR"){
+      ctx.fillStyle=r.stroke;ctx.font=`bold ${Math.max(7,sx(9))}px Rajdhani,sans-serif`;ctx.textAlign="center";ctx.textBaseline="top";ctx.fillText(r.label,rx+rw/2,ry+sy(3));
+    } else {
+      ctx.fillStyle="#64748b";ctx.font=`${Math.max(6,sx(8))}px Rajdhani,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(r.label,rx+rw/2,ry+rh/2);
+    }
+  });
+  Object.values(FURNITURE).forEach(fl=>drawFurniture(fl));
+}
+function drawConnections(){
+  ALL_SENSORS.forEach(s=>{
+    const st=sensorState[s.sid];if(!st)return;
+    ctx.save();ctx.setLineDash([2,5]);
+    ctx.strokeStyle=st.alarm?"rgba(239,68,68,0.2)":"rgba(59,130,246,0.18)";ctx.lineWidth=0.7;
+    ctx.beginPath();ctx.moveTo(sx(s.x),sy(s.y));ctx.lineTo(sx(GW_X),sy(GW_Y));ctx.stroke();
+    ctx.restore();
+  });
+}
+function drawSignals(ts){
+  signals=signals.filter(sg=>ts-sg.start<sg.dur);
+  signals.forEach(sg=>{
+    const t=(ts-sg.start)/sg.dur;
+    const x1=sx(sg.x1),y1=sy(sg.y1),x2=sx(GW_X),y2=sy(GW_Y);
+    const px=x1+(x2-x1)*t,py=y1+(y2-y1)*t;
+    ctx.save();ctx.globalAlpha=(1-t)*0.9;
+    ctx.fillStyle=sg.alarm?"#ef4444":STYPE_COLOR[sg.stype]||"#3b82f6";
+    ctx.beginPath();ctx.arc(px,py,3,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  });
+}
+function drawSensorNodes(){
+  ALL_SENSORS.forEach(s=>{
+    const st=sensorState[s.sid];
+    const alarm=st&&st.alarm;
+    const x=sx(s.x),y=sy(s.y);
+    const col=STYPE_COLOR[s.type]||"#6b7280";
+    ctx.save();
+    if(alarm){ctx.strokeStyle="rgba(239,68,68,0.35)";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,sx(7),0,Math.PI*2);ctx.stroke();}
+    ctx.fillStyle=alarm?"#ef4444":col;ctx.beginPath();ctx.arc(x,y,sx(5),0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#fff";ctx.font=`bold ${Math.max(5,sx(5.5))}px Rajdhani,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(s.type,x,y);
+    ctx.restore();
+  });
+  ctx.save();
+  ctx.fillStyle="#1d4ed8";ctx.beginPath();ctx.arc(sx(GW_X),sy(GW_Y),sx(7),0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#93c5fd";ctx.lineWidth=1.5;ctx.beginPath();ctx.arc(sx(GW_X),sy(GW_Y),sx(11),0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle="#fff";ctx.font=`bold ${Math.max(5,sx(6))}px Rajdhani,sans-serif`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("GW",sx(GW_X),sy(GW_Y));
+  ctx.restore();
+}
+let animTs=null;
+function loop(ts){
+  if(!animTs)animTs=ts;
+  drawFloorplan();drawConnections();drawSignals(ts);drawSensorNodes();
+  raf=requestAnimationFrame(loop);
+}
+function ensureCards(){
+  const sb=document.getElementById("bottom");
+  ALL_SENSORS.forEach(s=>{
+    if(document.getElementById("sc-"+s.sid))return;
+    const d=document.createElement("div");
+    d.id="sc-"+s.sid;d.className="scard";d.setAttribute("role","listitem");
+    d.innerHTML=`<div class="sc-top"><span class="sc-room">${s.sid}</span><span class="sc-type">${s.label}</span></div>
+<div class="sc-val" id="scv-${s.sid}">--<span>${s.unit}</span></div>
+<div class="sc-status" id="scs-${s.sid}">Bekleniyor...</div>
+<div class="scbar"><div class="scbar-f" id="scb-${s.sid}"></div></div>`;
+    sb.appendChild(d);
+  });
+}
+function randVal(s,anomaly){
+  if(anomaly)return+(Math.random()*(s.amax-s.amin)+s.amin).toFixed(2);
+  return+(Math.random()*(s.nmax-s.nmin)+s.nmin).toFixed(2);
+}
+function updateSensors(){
+  let alm=0,ok=0;
+  ALL_SENSORS.forEach(s=>{
+    const anomaly=Math.random()<0.13;
+    const val=randVal(s,anomaly);
+    const alarm=val<s.min||val>s.max;
+    sensorState[s.sid]={val,alarm,unit:s.unit,type:s.type};
+    if(alarm)alm++;else ok++;
+    signals.push({x1:s.x,y1:s.y,start:performance.now(),dur:800+Math.random()*500,alarm,stype:s.type});
+    const card=document.getElementById("sc-"+s.sid);
+    if(card){
+      card.className="scard"+(alarm?" alarm":"");
+      document.getElementById("scv-"+s.sid).innerHTML=`${val}<span>${s.unit}</span>`;
+      const el=document.getElementById("scs-"+s.sid);
+      el.textContent=alarm?`ALARM [${s.min}–${s.max}]`:`Normal [${s.min}–${s.max}]`;
+      const rng=s.nmax-s.nmin;
+      const pct=Math.min(100,Math.max(0,Math.round((val-s.nmin)/rng*100)));
+      const bar=document.getElementById("scb-"+s.sid);
+      bar.style.width=pct+"%";
+      bar.style.background=alarm?"#ef4444":pct>80?"#f59e0b":STYPE_COLOR[s.type]||"#3b82f6";
+    }
+  });
+  document.getElementById("st-t").textContent=ALL_SENSORS.length;
+  document.getElementById("st-ok").textContent=ok;
+  document.getElementById("st-al").textContent=alm;
+  if(alm>0)addLog(`ALARM: ${alm} sensör limit dışı!`,"la");
+  else addLog(`${ALL_SENSORS.length} node normal — Gateway senkron.`,"lok");
+}
+function addLog(msg,cls){
+  const now=new Date();
+  const ts=[now.getHours(),now.getMinutes(),now.getSeconds()].map(x=>x.toString().padStart(2,"0")).join(":");
+  const ul=document.getElementById("loglist");
+  const li=document.createElement("li");li.className=cls;
+  li.textContent=`[${ts}] ${msg}`;ul.prepend(li);
+  while(ul.children.length>7)ul.lastChild.remove();
+}
+function init(){
+  initCanvas();ensureCards();
+  ALL_SENSORS.forEach(s=>{sensorState[s.sid]={val:randVal(s,false),alarm:false,unit:s.unit,type:s.type};});
+  requestAnimationFrame(loop);
+  updateSensors();
+  setInterval(updateSensors,2200);
+  addLog("WSN sistemi başlatıldı. Tüm node'lar aktif.","lok");
+}
+window.addEventListener("resize",()=>{cancelAnimationFrame(raf);initCanvas();requestAnimationFrame(loop);});
+init();
+</script>
+</body>
+</html>
